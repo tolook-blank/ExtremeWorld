@@ -1,0 +1,811 @@
+syntax = "proto3"; 
+
+package SkillBridge.Message; 
+
+option csharp_namespace = "SkillBridge.Message";
+option cc_enable_arenas = true;
+
+////////////////////////////////////////////////////////////////
+//
+//  Basic Defines 
+//
+////////////////////////////////////////////////////////////////
+enum RESULT
+{
+	SUCCESS = 0;
+	FAILED = 1;
+}
+//角色阵营类型
+enum CHARACTER_TYPE
+{
+	Player = 0;
+	NPC = 1;
+	Monster = 2;
+}
+//角色职业类型
+enum CHARACTER_CLASS
+{
+	NONE = 0;
+	WARRIOR = 1;
+	WIZARD = 2;
+	ARCHER = 3;
+}
+
+enum CHARACTER_STATE
+{
+	IDLE = 0;
+	MOVE = 1;
+}
+
+//实体动画状态事件
+enum ENTITY_EVENT  
+{
+	NONE = 0;
+	IDLE = 1;
+	MOVE_FWD = 2;
+	MOVE_BACK = 3;
+	JUMP = 4;
+	RIDE = 5; //骑乘坐骑状态
+}
+
+//道具类型
+enum ITEM_TYPE
+{ 
+	NORMAL = 0; //普通道具,药水、食物、经验书之类
+	MATERIAL = 1; //材料
+	TASK = 2; //任务道具，直接发送给客户端
+	EQUIP = 3;//装备
+	RIDE = 4;//坐骑
+}
+
+//装备槽位
+enum EQUIP_SLOT
+{
+	WEAPON =0;		//武器
+	ACCESSORY = 1;  //副手
+	HELMET =2;		//头盔
+	CHEST = 3;		//胸甲
+	SHOULDER =4;	//护肩
+	PANTS = 5;		//裤子
+	BOOTS = 6;		//靴子
+	SLOT_MAX = 7; //表示槽位长度
+}
+
+ //message消息,类似于类class
+ //N开头的message,是服务端和客户端之间通讯交互使用的信息,如 NCharacterInfo
+message NUserInfo 
+{
+	int32 id = 1;
+	NPlayerInfo player = 2;//一个User 对应 一个Player
+}
+
+message NPlayerInfo 
+{
+	int32 id = 1;
+	repeated NCharacterInfo characters = 2;//一个Player可创建 多个Character（repeated,表示数组）
+}
+
+//NCharacterInfo,角色每次登录时，都要把身上的属性代表的信息，传递给角色
+message NCharacterInfo 
+{ 
+	int32 id = 1;//DB_id(以前作为entity_id,可能有混淆,现在只作DB_id)
+	//int32 tid = 2;//table_id 即配置表ID（弃用）
+	int32 config_id = 2;//配置表.xlsx中的id
+	int32 entity_id = 3;//entity_id
+	string name = 4; //姓名
+	CHARACTER_TYPE type = 5;  //阵营
+	CHARACTER_CLASS class = 6; //职业
+	int32 level = 7;    //等级
+	int32 mapId = 8;	//当前所处地图
+	NEntity entity = 9;
+    int64 gold = 10; //金币
+	
+	repeated NItemInfo Items = 11;//角色拥有的道具
+	NBagInfo Bag = 12;   //角色的背包，
+	bytes Equips = 13; //角色身上装备 ,装备的数据结构是int[7]数组,存储各个部位上当前装备的ID,共占28字节
+	repeated NQuestInfo quests = 14;//任务列表,存放着数据库表中保存的任务信息，任务管理器 public void Init(List<NQuestInfo> quests)
+	repeated NFriendInfo friends = 15; //好友列表,(队伍信息不存储在角色身上), 好友管理器 public void Init(List<NFriendInfo> friends)
+	NGuildInfo guild = 16;//公会信息 ，公会管理器 public void Init(NGuildInfo Info)
+	int32 ride = 17; //坐骑的ID,只要非0,就能知道 角色是骑乘坐骑状态
+}
+
+//道具信息
+message NItemInfo
+{
+	int32 id = 1;	 //道具ID
+	int32 count = 2; //道具数量
+}
+
+message NVector3
+{
+	int32 x = 1;
+	int32 y = 2;
+	int32 z = 3;
+}
+
+//背包信息
+message NBagInfo
+{
+	int32 Unlocked = 1; //背包已解锁的格子数  1个格子需要的字节数 * 解锁的格子数 = Items 可变长字节数组的长度
+	bytes Items = 2; //对应解锁格子中存放的道具  bytes可变长 字节数组,可以用来存储任意类型的道具
+}
+
+//角色(Money、Exp、Skill、item)的状态变化通知
+enum STATUS_ACTION
+{
+	UPDATE = 0;
+	ADD = 1;
+	DELETE = 2;
+}
+
+//状态变化类型
+enum STATUS_TYPE
+{
+	MONEY =0; //金币
+	EXP = 1;  //经验
+	SKILL_POINT =2; //技能点
+	ITEM = 3; //道具
+}
+
+//和STATUS_ACTION 功能重复，未使用
+enum STATUS_SOURCE
+{
+	UPDATE = 0;
+	ADD = 1;
+	DELETE = 2;
+}
+
+message NStatus//状态变化结构 ,例如增加N个道具, type=ITEM,action=ADD,id =NItemInfo.id,value=N
+{
+	STATUS_TYPE type = 1;
+	STATUS_ACTION action = 2;
+	int32 id = 3;
+	int32 value = 4;
+}
+
+message StatusNotify //状态通知
+{
+	repeated NStatus status = 1; //repeated是数组, 可以一次性通知 多个状态变化
+}
+
+
+////////////////////////////////////////////////////////////////
+//
+//  Entities
+//
+////////////////////////////////////////////////////////////////
+
+//NEntity 网络传输使用的实体数据
+message NEntity 
+{
+	int32 id = 1;//实体id
+	NVector3 position = 2;
+	NVector3 direction = 3;
+	int32 speed = 4;
+}
+
+//实体移动同步
+message NEntitySync 
+{
+	int32 id = 1;
+	ENTITY_EVENT event = 2; //实体动画事件
+	NEntity entity = 3; //实体数据（坐标、方向、速度）
+	int32 param = 4; //坐骑系统添加:表示坐骑的道具ID
+}
+
+
+
+////////////////////////////////////////////////////////////////
+//
+//  Messages
+//
+////////////////////////////////////////////////////////////////
+
+message NetMessage
+{
+	NetMessageRequest Request = 1;
+	NetMessageResponse Response = 2;
+}
+
+message NetMessageRequest
+{
+	UserRegisterRequest userRegister = 1;
+	UserLoginRequest userLogin = 2;
+	UserCreateCharacterRequest createChar = 3;
+	UserGameEnterRequest gameEnter = 4;
+	UserGameLeaveRequest gameLeave = 5;
+	
+	MapCharacterEnterRequest mapCharacterEnter = 6;
+	//MapCharacterLeaveRequest mapCharacterLeave = 7;//由于没有设置地图选择界面，若角色想要退出地图 只能返回角色选择 或者 离开游戏
+
+	BagSaveRequest bagSave = 7; //保存背包道具请求
+	MapEntitySyncRequest mapEntitySync = 8;
+	MapTeleportRequest mapTeleport = 9;
+
+	ItemBuyRequest itemBuy = 10;
+	ItemEquipRequest itemEquip = 11; //装备的穿脱请求
+
+	QuestListRequest questList = 12;  //获取任务列表请求
+	QuestAcceptRequest questAccept = 13; //接取任务请求
+	QuestSubmitRequest questSubmit = 14; //提交任务请求
+
+	FriendAddRequest friendAddReq = 15; //添加好友请求
+	FriendAddResponse friendAddRes = 16; //取巧设计点，需要和玩家做双向交互(客户端既要处理请求，也要处理响应),采用Request和Response的组合
+	FriendListRequest firendList = 17;
+	FriendRemoveRequest friendRemove = 18;
+
+	TeamInviteRequest teamInviteReq = 19; //组队请求
+	TeamInviteResponse teamInviteRes = 20; //取巧设计点，需要和玩家做双向交互(客户端既要处理请求，也要处理响应),都采用Request和Response的组合
+	TeamInfoRequest teamInfo = 21;
+	TeamLeaveRequest teamLeave = 22;
+
+	GuildCreateRequest guildCreate = 23;
+	GuildJoinRequest guildJoinReq = 24; //请求加入公会，  只要是涉及多人之间交互的信息,都采用Request和Response的组合
+	GuildJoinResponse guildJoinRes = 25;
+	GuildRequest guild = 26;
+	GuildLeaveRequest guildLeave = 27;
+	GuildListRequest guildList = 28;
+	GuildAdminRequest guildAdmin = 29; //公会管理协议
+	ChatRequest chat = 30;  //聊天
+	
+	//补充队长特权，踢人、转让队长
+	TeamAdminRequest teamAdmin= 31;
+
+}
+
+message NetMessageResponse
+{
+	UserRegisterResponse userRegister = 1;
+	UserLoginResponse userLogin = 2;
+	UserCreateCharacterResponse createChar = 3;
+	UserGameEnterResponse gameEnter = 4;
+	UserGameLeaveResponse gameLeave = 5;
+
+	MapCharacterEnterResponse mapCharacterEnter = 6;
+	MapCharacterLeaveResponse mapCharacterLeave = 7;
+
+	MapEntitySyncResponse mapEntitySync = 8;
+
+	BagSaveResponse bagSave = 9; //保存背包响应
+	
+	ItemBuyResponse itemBuy = 10;
+	ItemEquipResponse itemEquip = 11;//装备的穿脱响应
+
+	QuestListResponse questList = 12; 
+	QuestAcceptResponse questAccept = 13;
+	QuestSubmitResponse questSubmit = 14; //提交任务响应
+
+	FriendAddRequest friendAddReq = 15;  //添加好友请求
+	FriendAddResponse friendAddRes = 16; //取巧设计点,玩家双向交互,服务端也要收发信息,所以既有Request,也有Response
+	FriendListResponse firendList = 17;
+	FriendRemoveResponse friendRemove = 18;
+	
+	TeamInviteRequest teamInviteReq = 19; //组队邀请
+	TeamInviteResponse teamInviteRes = 20; 
+	TeamInfoResponse  teamInfo = 21;
+	TeamLeaveResponse  teamLeave = 22;
+
+	GuildCreateResponse guildCreate = 23;//创建公会响应
+	GuildJoinRequest guildJoinReq = 24; //请求加入公会，  只要是涉及多人之间交互的信息,都采用Request和Response的组合
+	GuildJoinResponse guildJoinRes = 25;//加入公会响应
+	GuildResponse guild = 26;			//公会信息响应
+	GuildLeaveResponse guildLeave = 27;//退出公会响应
+	GuildListResponse guildList = 28;  //请求公会列表响应
+	GuildAdminResponse guildAdmin = 29;
+
+	ChatResponse chat = 30;
+	//补充队长特权，踢人、转让队长
+	TeamAdminResponse teamAdmin = 31;
+
+	StatusNotify statusNotify = 100;
+}
+	
+
+
+
+// User Protocol 
+
+message UserLoginRequest 
+{//客户端发送(登录)Request请求包(用户名、密码)
+	string user = 1;
+	string passward = 2;
+}
+
+message UserLoginResponse 
+{//服务器返回(登录)Response 响应包(登录成功/失败、错误信息、角色信息)
+	RESULT result = 1;
+	string errormsg = 2;
+	NUserInfo userinfo = 3;
+}
+
+
+message UserRegisterRequest
+{
+	string user = 1;
+	string passward = 2;
+}
+
+message UserRegisterResponse {
+	RESULT result = 1;
+	string errormsg = 2;
+}
+
+message UserCreateCharacterRequest
+{
+	string name = 1;
+	CHARACTER_CLASS class = 2;
+}
+
+//创建角色响应
+message UserCreateCharacterResponse {
+	RESULT result = 1;
+	string errormsg = 2;
+	repeated NCharacterInfo characters = 3;//包含当前所有角色的角色列表,返回给客户端（保证了客户端和服务器的角色列表排序一致）
+}
+
+message UserGameEnterRequest
+{
+	int32 characterIdx = 1;
+}
+
+message UserGameEnterResponse  //只在 角色选择进入游戏时使用
+{
+	RESULT result = 1; //进入成功？
+	string errormsg = 2;
+	NCharacterInfo character = 3; //进入游戏时，获取角色的数据信息
+}
+
+message UserGameLeaveRequest
+{
+}
+
+message UserGameLeaveResponse 
+{
+	RESULT result = 1;
+	string errormsg = 2;
+}
+
+
+// Map Protocol 
+message MapCharacterEnterRequest
+{
+	int32 mapId = 1;
+}
+
+message MapCharacterEnterResponse
+{
+	int32 mapId = 1;
+	repeated NCharacterInfo characters = 2;
+}
+
+
+message MapCharacterLeaveResponse
+{
+	int32 entityId = 1;//从characterId 改为entityId,表意更明确
+}
+
+//移动同步请求
+message MapEntitySyncRequest
+{
+    NEntitySync entitySync = 1;//包含 实体动画事件、实体的坐标、方向、速度等数据
+}
+
+//移动同步响应
+message MapEntitySyncResponse
+{
+    repeated NEntitySync entitySyncs = 2; //repeated可以一次处理 多个玩家的移动同步响应
+}
+
+message MapTeleportRequest
+{
+	int32 teleporterId = 1;//传送起始点
+}
+
+//道具系统 + 商店系统 + 背包系统 + 装备系统
+//向服务器发送的 购买商品请求， 告诉服务器 在哪个商店里,购买了哪个商品
+message ItemBuyRequest
+{
+	int32 shopId = 1;     //商店id 
+	int32 shopItemId = 2; //商品道具id
+}
+
+message ItemBuyResponse
+{
+	RESULT result = 1;
+	string errormsg = 2;
+}
+
+//背包保存请求
+message BagSaveRequest
+{
+	NBagInfo BagInfo = 1;
+}
+
+//背包保存响应。 服务端只用把背包的数据传给客户端，客户端划分整理完，再把最后的布局数据发给服务器
+message BagSaveResponse
+{
+	RESULT result = 1;
+	string errormsg = 2;
+}
+
+//装备穿脱请求
+message ItemEquipRequest
+{
+	int32 slot =1;     //表示哪个槽位(部位)的装备， (脱装备时要清空槽位,只需知道槽位id即可)
+	int32 itemId =2;   //装备id , 穿装备时，只需知道 装备id
+	bool isEquip = 3;  //true穿 还是 false脱
+}
+
+//装备穿脱响应
+message ItemEquipResponse
+{
+	RESULT result = 1; //穿戴结果
+	string errormsg = 2;
+}
+
+
+// Quest System 任务系统
+enum QUEST_STATUS //任务状态
+{
+	IN_PROGRESS = 0;//已接受,未完成
+	COMPLETED = 1; //已完成,未提交
+	FINISHED = 2; //已完成,已提交
+	FAILED = 3; //任务失败
+}
+
+enum QUEST_LIST_TYPE //任务列表类型,分类,便于查看任务情况
+{
+	ALL = 0;  //全部任务
+	IN_PROGRESS = 1; //进行中的任务
+	FINISHED = 2;  //已完成的任务
+}
+
+message NQuestInfo//任务信息
+{
+	int32 quest_id =1; //任务ID
+	int32 quest_guid =2; //唯一id,对应数据库中的id,方便精准区分每日任务（循环/重复完成） ,否则单靠任务id无法区分
+	QUEST_STATUS status =3; //任务状态
+	repeated int32 targets = 4; //任务目标
+}
+
+message QuestListRequest//请求任务列表
+{
+	QUEST_LIST_TYPE listType = 1; //若QuestListRequest不改变listType的值,则默认拉取全部任务 listType默认值是0
+}
+
+message QuestListResponse
+{
+	RESULT result = 1;
+	string errormsg = 2;
+	repeated NQuestInfo quests =3; //返回任务列表的内容
+}
+
+message QuestAcceptRequest //接取任务请求
+{
+	int32 quest_id =1;//任务id
+}
+
+message QuestAcceptResponse
+{
+	RESULT result =1;
+	string errormsg =2;
+	NQuestInfo quest = 3; 
+}
+
+message QuestSubmitRequest //提交任务请求
+{
+	int32 quest_id =1; //任务id
+}
+
+message QuestSubmitResponse
+{
+	RESULT result =1;
+	string errormsg =2;
+	NQuestInfo quest = 3;
+}
+
+message QuestAbandonRequest //放弃任务
+{
+	int32 quest_id =1;
+}
+
+message QuestAbandonResponse
+{
+	RESULT result =1;
+	string errormsg =2;
+}
+
+
+//Friend System 好友系统
+message NFriendInfo//好友信息
+{
+	int32 id = 1;  //DB表[TCharacterFriends]中好友信息记录的ID
+	NCharacterInfo friendInfo = 2; //好友角色信息(id、姓名、等级、职业)
+	int32 status = 3; //状态:在线/离线
+}
+
+message FriendAddRequest //添加好友请求
+{
+	int32 from_id = 1;//发起人id
+	string from_name = 2;
+	int32 to_id = 3;//对方(好友)的id
+	string to_name = 4;
+}
+
+message FriendAddResponse
+{
+	RESULT result = 1;
+	string errormsg = 2;
+	FriendAddRequest request = 3;//请帖,可以从这获取FriendAddResponse的成功/失败 对应着哪个请帖 ,就不用在内存中 专门保存每条FriendAddRequest记录
+}
+
+message FriendListRequest
+{
+}
+
+message FriendListResponse//好友列表响应（刷新时，服务器返回当前好友信息）
+{
+	RESULT result = 1;
+	string errormsg = 2;
+	repeated NFriendInfo friends = 3;//当前所有好友的信息
+}
+
+message FriendRemoveRequest //好友删除请求
+{
+	int32 id = 1; //好友列表选中项的Id
+	int32 friendId = 2; //好友id
+}
+
+message FriendRemoveResponse//好友删除响应，返回给发起人
+{
+	RESULT result = 1;
+	string errormsg = 2;
+	int32 id = 3; //要删除的 好友的id
+}
+
+//Team System 组队系统
+
+message NTeamInfo //队伍信息
+{
+	int32 id = 1;  //队伍ID
+    int32 leader = 2;//队长ID
+	repeated NCharacterInfo members = 3; //队员列表
+}
+
+
+message TeamInviteRequest //组队邀请
+{
+	int32 team_id = 1; //队伍ID
+	int32 from_id = 2; //邀请人ID
+	string from_name = 3;
+	int32 to_id = 4; //受邀请的玩家ID
+	string to_name = 5;
+}
+
+message TeamInviteResponse
+{
+	RESULT result = 1;
+	string errormsg = 2;
+	TeamInviteRequest request = 3;//组队邀请的请帖
+}
+
+message TeamInfoRequest //刷新队伍信息时使用
+{
+
+}
+
+message TeamInfoResponse
+{
+	RESULT result = 1;
+	string errormsg = 2;
+	NTeamInfo team = 3;//当前队伍信息
+}
+
+message TeamLeaveRequest //退出队伍请求
+{
+	int32 team_id = 1;  //队伍ID
+	int32 characterId = 2; //退出的玩家角色ID
+}
+
+message TeamLeaveResponse
+{
+	RESULT result = 1;
+	string errormsg = 2;
+	int32 characterId = 3; //退出的玩家角色ID
+}
+
+//队长管理命令
+enum TEAM_ADMIN_COMMAND
+{
+	KICKOUT = 1;//T人
+	TRANSFER = 2;//转让队长
+}
+
+message TeamAdminRequest
+{
+	TEAM_ADMIN_COMMAND command = 1;//队长管理命令
+	int32 target = 2; //目标ID
+}
+
+message TeamAdminResponse
+{
+	RESULT result = 1;
+	string errormsg = 2;
+	TeamAdminRequest command = 3;
+}
+
+
+//公会系统
+enum GUILD_TITLE //公会中的职位
+{
+	NONE = 0; //普通成员
+	PRESIDENT = 1;   //会长
+	VICE_PRESIDENT = 2; //副会长
+}
+
+enum APPLY_RESULT //入会审批结果
+{
+	NONE = 0;   //未处理
+	ACCEPT = 1;  //同意
+	REJECT = 2; //拒绝
+}
+
+message NGuildInfo  //公会信息(对应DB中实体 TGuild)
+{
+	int32 id = 1;        //公会ID
+	string guild_name = 2; //公会名称
+	int32 leaderId = 3;   //会长ID
+	string leaderName = 4; //会长名称
+	string notice = 5; 		//公会宣言 
+	int32 memberCount = 6;  //公会成员数
+	repeated NGuildMemberInfo  members = 7; //公会成员列表
+	repeated NGuildApplyInfo  applies = 8; //公会申请加入信息列表
+	int64 createTime = 9;   //公会创建时间
+}
+
+message NGuildMemberInfo //公会成员列表
+{
+	int32 id = 1; 
+	int32 characterId = 2; //成员的玩家ID
+	GUILD_TITLE title = 3; //职位
+	NCharacterInfo info = 4; //成员角色信息
+	int64 joinTime = 5;  //入会时间
+	int64 lastTime = 6;  //上次在线时间
+	int32 status = 7;    //在线状态
+}
+
+message NGuildApplyInfo //公会申请加入信息列表
+{
+	int32 guild_id = 1;   //公会ID
+	int32 characterId = 2; //申请人ID
+	string name = 3; //申请人名称
+	int32 class = 4; //申请人职业
+	int32 level = 5; //申请人等级
+	APPLY_RESULT result = 6; //入会审批结果
+}
+
+message GuildCreateRequest  //创建公会请求
+{
+	string guild_name = 1;  //公会名称
+	string guild_notice = 2; //公会宣言
+}
+
+message GuildCreateResponse
+{
+	RESULT result = 1;
+	string errormsg = 2;
+	NGuildInfo guildInfo = 3; //创建的公会信息
+}
+
+message GuildJoinRequest  //加入公会申请请求 [member -> server -> leader]
+{
+	NGuildApplyInfo apply = 1;
+}
+
+
+message GuildJoinResponse //加入公会申请响应 [server -> leader ]
+{	
+	RESULT result = 1;
+	string errormsg = 2;
+	NGuildApplyInfo apply = 3;
+}
+
+message GuildListRequest //查看所有公会
+{
+
+}
+
+message GuildListResponse
+{
+	RESULT result = 1;
+	string errormsg = 2;
+	repeated NGuildInfo guilds = 3;//公会列表（界面中选择一个公会->申请入会）
+}
+
+message GuildRequest //请求单个公会信息
+{
+
+}
+
+message GuildResponse //公会信息变更,后处理 通过GuildResponse 传递更新
+{
+	RESULT result = 1;
+	string errormsg = 2;
+	NGuildInfo guildInfo = 3;
+}
+
+message GuildLeaveRequest
+{
+
+}
+
+message GuildLeaveResponse  //退出公会
+{
+	RESULT result = 1;
+	string errormsg = 2;
+}
+
+
+//公会管理
+enum GUILD_ADMIN_COMMAND//汇总执行管理职能的命令， 命令共性： 操作者 都是公会管理员 , 管理对象 都是公会成员
+{
+	KICKOUT = 1;//T人
+	PROMOTE = 2;//晋升
+	DEPOSE = 3;//罢免
+	TRANSFER = 4;//转让会长
+}
+
+message GuildAdminRequest
+{
+	GUILD_ADMIN_COMMAND command = 1; //只需将管理命令封装到一个请求里，不需要为每个命令单独做收发协议
+	int32 target = 2;
+}
+
+message GuildAdminResponse
+{
+	RESULT result = 1;
+	string errormsg = 2;
+	GuildAdminRequest command = 3;
+}
+
+//聊天系统
+
+enum CHAT_CHANNEL//聊天频道
+{
+	ALL = -1;	//综合
+	LOCAL = 1;  //本地
+	WORLD = 2;  //世界
+	SYSTEM = 4; //系统
+	PRIVATE = 8;//私聊
+	TEAM = 16;  //队伍
+	GUILD = 32; //公会
+}
+
+message ChatMessage //聊天消息
+{
+	CHAT_CHANNEL channel = 1;
+	int32 id = 2;
+	int32 from_id = 3; //消息发送者
+	string from_name = 4;
+	int32 to_id = 5; //消息接收者（私聊）
+	string to_name = 6;
+	string message = 7; //消息内容
+	double time = 8;
+}
+
+message ChatRequest
+{
+	ChatMessage message = 1;//聊天请求中 只有聊天消息
+}
+
+message ChatResponse
+{
+	RESULT result = 1;
+	string errormsg = 2;
+	repeated ChatMessage localMessages = 3;
+	repeated ChatMessage worldMessages = 4;
+	repeated ChatMessage systemMessages = 5;
+	repeated ChatMessage privateMessages = 6;
+	repeated ChatMessage teamMessages = 7;
+	repeated ChatMessage guildMessages = 8;
+}

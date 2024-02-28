@@ -1,0 +1,26 @@
+
+Src\Data\Tables\目录下存放着.xlsx 的配置表， 选择使用Excel格式是为了方便 编辑配置表
+Src\Data\Data\ 目录下存放着 .txt(Json格式)配置表，使用 .txt(Json)，是方便进行数据读取，序列化、反序列化操作。
+
+操作流程：
+当在Tables文件中，修改过Excel配置表后
+需要点击使用 Excel2Json.cmd 文件，将Excel配置表，以 json的格式，生成 .txt文件。
+然后把Src\Data\Data目录下的.txt(即Json)文件， 复制到客户端 Src\Client\Data ，与服务器中  Src\Server\GameServer\GameServer\bin\Debug\Data 
+
+
+
+配置表文件命名规则为 XXXDefine
+
+修改配置表并应用，步骤举例：修改 Src\Data\Tables\目录下的地图配置表MapDefine.xlsx ，添加小地图字段:
+
+1.在配置表MapDefine.xlsx中，添加 小地图字段 String Minimap
+
+2.关闭配置表MapDefine.xlsx文件，使用 Excel2Json.cmd 文件生成 MapDefine.txt (json格式)，在Src\Data\Data\目录下
+
+3.Src\Lib\Common\Data中，要存放所有通用的配置表数据，所以，还要在 Common\Data目录下添加 或 修改配置表，在XXXDefine.cs中， 手动添加配置表中字段，再重新生成解决方案 
+
+4.最后复制 Src\Lib\Common\bin\Debug 目录下的 Common.dll/pdb , Protocol.dll/pdb ,（protobuf-net.dll/xml） , 到客户端的 Src\Client\Assets\References 目录中。在git的帮助下，可以发现，变红色叹号的 就是有改动的。
+
+
+
+

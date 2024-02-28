@@ -1,0 +1,44 @@
+
+protobuf的核心是一个.proto 协议描述文件，自定义一个.proto来创建我们的协议数据；protobuf-net.dll是protobuf-net的库文件
+使用ProtoBuf，主要有两个操作：序列化和反序列化。这两个操作都需要协议描述文件.proto文件。没有对应的.proto文件,就无法正确打开ProtoBuf序列化文件.
+
+
+修改协议Src\Lib\proto\message.proto，添加新的消息具体步骤：
+1、 修改 E:\0VipSkill_Unity_MMORPG\mymmo\Src\Lib\proto目录下的 message.proto文件
+2、点击E:\0VipSkill_Unity_MMORPG\mymmo\Tools目录下的 genproto.cmd文件，生成协议类
+3、重新生成GameServer.sln的解决方案 
+
+
+更新协议后，手动 将 Src\Lib\Common\bin\Debug 目录下的Common.dll 、Common.pdb 、 Protocol.dll、Protocol.pdb 复制到Src\Client\Assets\References 目录下。
+
+也可 自动完成复制，操作方法是：打开GameServer.sln项目文件，在解决方案资源管理器中 右键选择Common -> 属性-> 在打开的面板中，选择生成事件 ->在生成后事件命令行中 输入两行Dos命令 ->最后保存，右键Common  生成  ，即可完成复制
+copy $(TargetDir)Common.* $(ProjectDir)..\..\Client\Assets\References /Y
+copy $(TargetDir)Protocol.* $(ProjectDir)..\..\Client\Assets\References /Y
+
+
+在message.proto 的NetMessageRequest/Response 中 添加协议字段后，一定要在src\Lib\Common\Network\MessageDispatch.cs  中加上消息分发处理逻辑。否则服务器收不到消息处理
+
+如果需要读取配置表文件，还要在客户端和服务器的 DataManager中 加上读取配置表逻辑
+
+
+由Tools目录下的 genproto.cmd 生成的C#协议文件, mymmo\Src\Lib\Protocol\message.cs
+namespace SkillBridge.Message
+{
+    //实现ProtoBuf.IExtensible 接口 表示这个类是可扩展的，允许添加额外的扩展字段。
+    [global::ProtoBuf.ProtoContract()] // ProtoBuf 的特性，标记这个类, ProtoBuf 使用 ProtoContract 来序列化和反序列化对象
+    public partial class NUserInfo : global::ProtoBuf.IExtensible
+    {
+        private global::ProtoBuf.IExtension __pbn__extensionData;//私有字段，用于存储扩展数据
+        global::ProtoBuf.IExtension global::ProtoBuf.IExtensible.GetExtensionObject(bool createIfMissing)
+            => global::ProtoBuf.Extensible.GetExtensionObject(ref __pbn__extensionData, createIfMissing);//IExtensible 接口的实现，用于获取扩展对象
+
+        [global::ProtoBuf.ProtoMember(1, Name = @"id")]//ProtoBuf 的成员特性,1 是字段的标签，Name = @"id" 是字段的名称。在序列化和反序列化时，使用这个标签和名称来映射字段。
+        public int Id { get; set; }
+
+        [global::ProtoBuf.ProtoMember(2, Name = @"player")]
+        public NPlayerInfo Player { get; set; }
+
+    }
+
+
+
